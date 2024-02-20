@@ -6,6 +6,9 @@ include {
   path = find_in_parent_folders()
 }
 
+dependency "vpc" {
+  config_path = "${get_repo_root()}/opentofu/terragrunt/vpc"
+}
 generate "versions.tf" {
   path      = "versions.tf"
   if_exists = "overwrite"
@@ -18,8 +21,15 @@ generate "versions.tf" {
 }
 
 inputs = {
-    key_name = "k8-airgap-keypair"
-    aws_region = get_env("AWS_REGION", "eu-west-1")
-    profile = get_env("AWS_PROFILE", "polarsquad")
-    keypair_path = "${get_repo_root()}/ansible"
+    key_name           = "k8-airgap-keypair"
+    aws_region         = get_env("AWS_REGION", "eu-west-1")
+    profile            = get_env("AWS_PROFILE", "polarsquad")
+    keypair_path       = "${get_repo_root()}/ansible"
+    vpc_id             = dependency.vpc.outputs.vpc_id
+    subnet_ids         = dependency.vpc.outputs.public_subnets
+    public_ip          = "91.152.176.231/32"
+    count_master_nodes = 1
+    count_agent_nodes = 1
+    ec2_ami            = "ami-0905a3c97561e0b69"
+    instance_type      = "t3.micro"
 }
