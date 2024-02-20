@@ -51,14 +51,14 @@ resource "aws_security_group_rule" "egress-self" {
 
 
 resource "aws_instance" "master_nodes" {
-  count         = var.count_master_nodes
-  ami           = var.ec2_ami
-  instance_type = var.instance_type
-  key_name      = var.key_name
-  subnet_id     = var.subnet_ids[count.index]
+  count                  = var.count_master_nodes
+  ami                    = var.ec2_ami
+  instance_type          = var.instance_type
+  key_name               = var.key_name
+  subnet_id              = var.subnet_ids[count.index]
   vpc_security_group_ids = [aws_security_group.k8-airgap-sg.id]
   root_block_device {
-    volume_size =  50
+    volume_size = 50
     tags = {
       Name = "master_nodes_${count.index}"
     }
@@ -70,14 +70,14 @@ resource "aws_instance" "master_nodes" {
 
 
 resource "aws_instance" "agent_nodes" {
-  count         = var.count_agent_nodes
-  ami           = var.ec2_ami
-  instance_type = var.instance_type
-  key_name      = var.key_name
-  subnet_id     = var.subnet_ids[count.index]
+  count                  = var.count_agent_nodes
+  ami                    = var.ec2_ami
+  instance_type          = var.instance_type
+  key_name               = var.key_name
+  subnet_id              = var.subnet_ids[count.index]
   vpc_security_group_ids = [aws_security_group.k8-airgap-sg.id]
   root_block_device {
-    volume_size =  50
+    volume_size = 50
     tags = {
       Name = "agent_nodes_${count.index}"
     }
@@ -85,4 +85,9 @@ resource "aws_instance" "agent_nodes" {
   tags = {
     Name = "agent_nodes_${count.index}"
   }
+}
+
+resource "local_file" "inventory" {
+  content  = templatefile("${path.module}/inventory.tftpl", { keypair_path = "${var.keypair_path}/${var.key_name}" ,master_nodes_public_dns =  aws_instance.master_nodes[*].public_dns, agent_nodes_public_dns = aws_instance.agent_nodes[*].public_dns})
+  filename = "${var.keypair_path}/inventory.ini"
 }

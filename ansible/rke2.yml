@@ -1,0 +1,7 @@
+---
+- name: Install nginx on remote host
+  hosts: master_nodes
+  become: true
+  tasks:
+    - name: Return motd to registered var
+      ansible.builtin.command: pwd
