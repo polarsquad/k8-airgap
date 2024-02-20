@@ -31,5 +31,5 @@ inputs = {
     count_master_nodes = 1
     count_agent_nodes = 1
     ec2_ami            = "ami-0905a3c97561e0b69"
-    instance_type      = "t3.micro"
+    instance_type      = "t3.xlarge"
 }

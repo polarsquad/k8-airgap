@@ -7,22 +7,57 @@
       get_url:
         url: "https://github.com/rancher/rke2/releases/download/v1.29.1%2Brke2r1/rke2-images.linux-amd64.tar.zst"
         dest: "{{ playbook_dir }}/artifacts/rke2/rke2-images.linux-amd64.tar.zst"
-    - name: Download rke2-images
+    - name: Download rke2.linux-amd64
       get_url:
         url: "https://github.com/rancher/rke2/releases/download/v1.29.1%2Brke2r1/rke2.linux-amd64.tar.gz"
         dest: "{{ playbook_dir }}/artifacts/rke2/rke2.linux-amd64.tar.gz"
-    - name: Download rke2-images
+    - name: Download sha256sum-amd64
       get_url:
         url: "https://github.com/rancher/rke2/releases/download/v1.29.1%2Brke2r1/sha256sum-amd64.txt"
         dest: "{{ playbook_dir }}/artifacts/rke2/sha256sum-amd64.txt"
-    - name: Download rke2-images
+    - name: Download install.sh
       get_url:
         url: "https://get.rke2.io"
         dest: "{{ playbook_dir }}/artifacts/rke2/install.sh"            
 
-- name: Install nginx on remote host
+- name: Install RKE2 in host
   hosts: master_nodes
   become: true
   tasks:
-    - name: Return motd to registered var
-      ansible.builtin.command: pwd
+    - name: Crete Artifact Directory
+      ansible.builtin.file:
+        path: /root/rke2-artifacts
+        state: directory
+    - name: Crete images directory
+      ansible.builtin.file:
+        path: /var/lib/rancher/rke2/agent/images/
+        state: directory     
+    - name: Copy rke2-images.linux-amd64.tar.zst
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/artifacts/rke2/rke2-images.linux-amd64.tar.zst"
+        dest: /root/rke2-artifacts/rke2-images.linux-amd64.tar.zst
+    - name: Copy rke2.linux-amd64.tar.gz
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/artifacts/rke2/rke2.linux-amd64.tar.gz"
+        dest: /root/rke2-artifacts/rke2.linux-amd64.tar.gz
+    - name: Copy sha256sum-amd64.txt
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/artifacts/rke2/sha256sum-amd64.txt"
+        dest: /root/rke2-artifacts/sha256sum-amd64.txt
+    - name: Copy install.sh
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/artifacts/rke2/install.sh"
+        dest: /root/rke2-artifacts/install.sh
+        mode: 0755
+    - name: Install rke2
+      environment:
+        INSTALL_RKE2_ARTIFACT_PATH: /root/rke2-artifacts
+        INSTALL_RKE2_TYPE: "server"
+        INSTALL_RKE2_METHOD: "tar"
+        RKE2_TOKEN: "K10e3e3"
+      ansible.builtin.command: /root/rke2-artifacts/install.sh
+    - name: Start RKE2 service
+      ansible.builtin.systemd_service:
+        state: started
+        name: rke2-server.service
+                 

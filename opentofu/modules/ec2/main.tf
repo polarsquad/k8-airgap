@@ -87,7 +87,20 @@ resource "aws_instance" "agent_nodes" {
   }
 }
 
+resource "aws_eip" "master_nodes" {
+  count    = var.count_master_nodes
+  instance = aws_instance.master_nodes[count.index].id
+  domain   = "vpc"
+}
+
+resource "aws_eip" "agent_nodes" {
+  count    = var.count_agent_nodes
+  instance = aws_instance.agent_nodes[count.index].id
+  domain   = "vpc"
+}
+
+
 resource "local_file" "inventory" {
-  content  = templatefile("${path.module}/inventory.tftpl", { keypair_path = "${var.keypair_path}/${var.key_name}" ,master_nodes_public_dns =  aws_instance.master_nodes[*].public_dns, agent_nodes_public_dns = aws_instance.agent_nodes[*].public_dns})
+  content  = templatefile("${path.module}/inventory.tftpl", { keypair_path = "${var.keypair_path}/${var.key_name}", master_nodes_public_dns = aws_instance.master_nodes[*].public_dns, agent_nodes_public_dns = aws_instance.agent_nodes[*].public_dns })
   filename = "${var.keypair_path}/inventory.ini"
 }
