@@ -13,3 +13,22 @@ remote_state {
     if_exists = "overwrite"
   }
 }
+
+generate "common_variables.tf" {
+  path      = "common_variables.tf"
+  if_exists = "overwrite"
+  contents  = <<EOF
+    variable "profile" {
+        description = "profile"
+        default     = "polarsquad"
+        type        = string
+    }
+
+    variable "aws_region" {
+        description = "aws_region"
+        default     = "eu-west-1"
+        type        = string
+    
+    }
+    EOF
+}

@@ -16,16 +16,3 @@ variable "environment" {
   default     = "dev"
   type        = string
 }
-
-variable "profile" {
-  description = "profile"
-  default     = "polarsquad"
-  type        = string
-}
-
-variable "aws_region" {
-  description = "aws_region"
-  default     = "eu-west-1"
-  type        = string
-  
-}
