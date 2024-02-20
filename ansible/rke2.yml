@@ -1,4 +1,25 @@
 ---
+- name: Download rke2
+  hosts: 127.0.0.1
+  connection: local
+  tasks:
+    - name: Download rke2-images
+      get_url:
+        url: "https://github.com/rancher/rke2/releases/download/v1.29.1%2Brke2r1/rke2-images.linux-amd64.tar.zst"
+        dest: "{{ playbook_dir }}/artifacts/rke2/rke2-images.linux-amd64.tar.zst"
+    - name: Download rke2-images
+      get_url:
+        url: "https://github.com/rancher/rke2/releases/download/v1.29.1%2Brke2r1/rke2.linux-amd64.tar.gz"
+        dest: "{{ playbook_dir }}/artifacts/rke2/rke2.linux-amd64.tar.gz"
+    - name: Download rke2-images
+      get_url:
+        url: "https://github.com/rancher/rke2/releases/download/v1.29.1%2Brke2r1/sha256sum-amd64.txt"
+        dest: "{{ playbook_dir }}/artifacts/rke2/sha256sum-amd64.txt"
+    - name: Download rke2-images
+      get_url:
+        url: "https://get.rke2.io"
+        dest: "{{ playbook_dir }}/artifacts/rke2/install.sh"            
+
 - name: Install nginx on remote host
   hosts: master_nodes
   become: true

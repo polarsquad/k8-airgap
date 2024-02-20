@@ -37,3 +37,7 @@ terraform.rc
 
 *keypair
 inventory.ini
+rke2-images.linux-amd64.tar.zst
+rke2.linux-amd64.tar.gz"
+sha256sum-amd64.txt
+install.sh
