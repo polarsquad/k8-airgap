@@ -99,8 +99,34 @@ resource "aws_eip" "agent_nodes" {
   domain   = "vpc"
 }
 
+resource "random_password" "rke2_token" {
+  length           = 16
+  special          = false
+}
+
 
 resource "local_file" "inventory" {
+  depends_on = [
+      aws_eip.agent_nodes,
+      aws_eip.master_nodes
+  ]
   content  = templatefile("${path.module}/inventory.tftpl", { keypair_path = "${var.keypair_path}/${var.key_name}", master_nodes_public_dns = aws_instance.master_nodes[*].public_dns, agent_nodes_public_dns = aws_instance.agent_nodes[*].public_dns })
   filename = "${var.keypair_path}/inventory.ini"
+}
+resource "local_file" "master_nodes_configs" {
+  depends_on = [
+      aws_eip.master_nodes
+  ]
+  count    = var.count_master_nodes
+  content  = templatefile("${path.module}/config.tftpl", {rke2_token = random_password.rke2_token.result ,master_dns=aws_instance.master_nodes[0].public_dns,exclude= count.index == 0})
+  filename = "${var.keypair_path}/artifacts/rke2/master_nodes/${aws_instance.master_nodes[count.index].public_dns}/config.yaml"
+}
+
+resource "local_file" "agents_nodes_configs" {
+  depends_on = [
+      aws_eip.agent_nodes
+  ]
+  count    = var.count_master_nodes
+  content  = templatefile("${path.module}/config.tftpl", {rke2_token = random_password.rke2_token.result ,master_dns=aws_instance.master_nodes[0].public_dns,exclude=false})
+  filename = "${var.keypair_path}/artifacts/rke2/agent_nodes/${aws_instance.agent_nodes[count.index].public_dns}/config.yaml"
 }

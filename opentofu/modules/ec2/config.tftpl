@@ -1,0 +1,4 @@
+%{ if exclude == false ~}
+server: https://${master_dns}:9345
+%{ endif ~}
+token: ${rke2_token}
