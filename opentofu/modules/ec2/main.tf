@@ -5,7 +5,7 @@ module "key-pair" {
   create_private_key = true
 }
 
-resource "local_sensitive_file" "this" {
+resource "local_sensitive_file" "key-pair" {
   content  = module.key-pair.private_key_pem
   filename = "${var.keypair_path}/${var.key_name}"
 }
@@ -51,6 +51,9 @@ resource "aws_security_group_rule" "egress-self" {
 
 
 resource "aws_instance" "master_nodes" {
+  depends_on = [
+    module.key-pair
+  ]
   count                  = var.count_master_nodes
   ami                    = var.ec2_ami
   instance_type          = var.instance_type
@@ -70,6 +73,9 @@ resource "aws_instance" "master_nodes" {
 
 
 resource "aws_instance" "agent_nodes" {
+  depends_on = [
+    module.key-pair
+  ]
   count                  = var.count_agent_nodes
   ami                    = var.ec2_ami
   instance_type          = var.instance_type
@@ -99,34 +105,43 @@ resource "aws_eip" "agent_nodes" {
   domain   = "vpc"
 }
 
+
+data "aws_instance" "master_nodes" {
+  depends_on = [
+    aws_eip.master_nodes
+  ]
+  count = var.count_master_nodes
+  instance_id = aws_instance.master_nodes[count.index].id
+}
+data "aws_instance" "agent_nodes" {
+  depends_on = [
+    aws_eip.agent_nodes
+  ]
+  count = var.count_agent_nodes
+  instance_id = aws_instance.agent_nodes[count.index].id
+}
+
 resource "random_password" "rke2_token" {
-  length           = 16
-  special          = false
+  length  = 16
+  special = false
 }
 
 
 resource "local_file" "inventory" {
-  depends_on = [
-      aws_eip.agent_nodes,
-      aws_eip.master_nodes
-  ]
-  content  = templatefile("${path.module}/inventory.tftpl", { keypair_path = "${var.keypair_path}/${var.key_name}", master_nodes_public_dns = aws_instance.master_nodes[*].public_dns, agent_nodes_public_dns = aws_instance.agent_nodes[*].public_dns })
+  content  = templatefile("${path.module}/inventory.tftpl", { keypair_path = "${var.keypair_path}/${var.key_name}", master_nodes_public_dns = data.aws_instance.master_nodes[*].public_dns, agent_nodes_public_dns = data.aws_instance.agent_nodes[*].public_dns })
   filename = "${var.keypair_path}/inventory.ini"
 }
 resource "local_file" "master_nodes_configs" {
-  depends_on = [
-      aws_eip.master_nodes
-  ]
   count    = var.count_master_nodes
-  content  = templatefile("${path.module}/config.tftpl", {rke2_token = random_password.rke2_token.result ,master_dns=aws_instance.master_nodes[0].public_dns,exclude= count.index == 0})
-  filename = "${var.keypair_path}/artifacts/rke2/master_nodes/${aws_instance.master_nodes[count.index].public_dns}/config.yaml"
+  content  = templatefile("${path.module}/config.tftpl", { node_name = data.aws_instance.master_nodes[count.index].public_dns, rke2_token = random_password.rke2_token.result, master_dns = data.aws_instance.master_nodes[0].public_dns, exclude = count.index == 0, master_nodes_public_dns = data.aws_instance.master_nodes[*].public_dns, agent_nodes_public_dns = data.aws_instance.agent_nodes[*].public_dns })
+  filename = "${var.keypair_path}/artifacts/rke2/master_nodes/${data.aws_instance.master_nodes[count.index].public_dns}/config.yaml"
 }
 
 resource "local_file" "agents_nodes_configs" {
   depends_on = [
-      aws_eip.agent_nodes
+    aws_eip.agent_nodes
   ]
-  count    = var.count_master_nodes
-  content  = templatefile("${path.module}/config.tftpl", {rke2_token = random_password.rke2_token.result ,master_dns=aws_instance.master_nodes[0].public_dns,exclude=false})
-  filename = "${var.keypair_path}/artifacts/rke2/agent_nodes/${aws_instance.agent_nodes[count.index].public_dns}/config.yaml"
+  count    = var.count_agent_nodes
+  content  = templatefile("${path.module}/config.tftpl", { node_name = data.aws_instance.agent_nodes[count.index].public_dns, rke2_token = random_password.rke2_token.result, master_dns = data.aws_instance.master_nodes[0].public_dns, exclude = false, master_nodes_public_dns = data.aws_instance.master_nodes[*].public_dns, agent_nodes_public_dns = data.aws_instance.agent_nodes[*].public_dns })
+  filename = "${var.keypair_path}/artifacts/rke2/agent_nodes/${data.aws_instance.agent_nodes[count.index].public_dns}/config.yaml"
 }

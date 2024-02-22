@@ -2,3 +2,11 @@
 server: https://${master_dns}:9345
 %{ endif ~}
 token: ${rke2_token}
+node-name: ${node_name}
+tls-san:
+%{ for master_node_public_dns in master_nodes_public_dns ~}
+    - ${master_node_public_dns}
+%{ endfor ~}
+%{ for agent_node_public_dns in agent_nodes_public_dns ~}
+    - ${agent_node_public_dns}
+%{ endfor ~}

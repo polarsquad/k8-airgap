@@ -31,7 +31,11 @@
     - name: Crete images directory
       ansible.builtin.file:
         path: /var/lib/rancher/rke2/agent/images/
-        state: directory     
+        state: directory
+    - name: Crete Config Directory
+      ansible.builtin.file:
+        path: /etc/rancher/rke2/
+        state: directory           
     - name: Copy rke2-images.linux-amd64.tar.zst
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/artifacts/rke2/rke2-images.linux-amd64.tar.zst"
@@ -44,6 +48,10 @@
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/artifacts/rke2/sha256sum-amd64.txt"
         dest: /root/rke2-artifacts/sha256sum-amd64.txt
+    - name: Copy config file
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/artifacts/rke2/master_nodes/{{ inventory_hostname }}/config.yaml"
+        dest: /etc/rancher/rke2/config.yaml    
     - name: Copy install.sh
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/artifacts/rke2/install.sh"
@@ -54,11 +62,12 @@
         INSTALL_RKE2_ARTIFACT_PATH: /root/rke2-artifacts
         INSTALL_RKE2_TYPE: "server"
         INSTALL_RKE2_METHOD: "tar"
-        RKE2_TOKEN: "K10e3e3"
       ansible.builtin.command: /root/rke2-artifacts/install.sh
     - name: Start RKE2 service
+      throttle: 1
       ansible.builtin.systemd_service:
-        state: started
+        state: restarted
+        enabled: yes
         name: rke2-server.service
 - name: Install RKE2 in agent nodes
   hosts: agent_nodes
@@ -71,7 +80,11 @@
     - name: Crete images directory
       ansible.builtin.file:
         path: /var/lib/rancher/rke2/agent/images/
-        state: directory     
+        state: directory
+    - name: Crete Config Directory
+      ansible.builtin.file:
+        path: /etc/rancher/rke2/
+        state: directory          
     - name: Copy rke2-images.linux-amd64.tar.zst
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/artifacts/rke2/rke2-images.linux-amd64.tar.zst"
@@ -84,6 +97,10 @@
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/artifacts/rke2/sha256sum-amd64.txt"
         dest: /root/rke2-artifacts/sha256sum-amd64.txt
+    - name: Copy config file
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/artifacts/rke2/agent_nodes/{{ inventory_hostname }}/config.yaml"
+        dest: /etc/rancher/rke2/config.yaml       
     - name: Copy install.sh
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/artifacts/rke2/install.sh"
@@ -94,10 +111,9 @@
         INSTALL_RKE2_ARTIFACT_PATH: /root/rke2-artifacts
         INSTALL_RKE2_TYPE: "agent"
         INSTALL_RKE2_METHOD: "tar"
-        RKE2_TOKEN: "K10e3e3"
-        RKE2_URL:
       ansible.builtin.command: /root/rke2-artifacts/install.sh
-    # - name: Start RKE2 service
-    #   ansible.builtin.systemd_service:
-    #     state: started
-    #     name: rke2-server.service                 
+    - name: Start RKE2 service
+      ansible.builtin.systemd_service:
+        state: restarted
+        enabled: yes
+        name: rke2-agent.service                 

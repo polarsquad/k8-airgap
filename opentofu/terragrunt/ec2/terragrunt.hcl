@@ -29,7 +29,7 @@ inputs = {
     subnet_ids         = dependency.vpc.outputs.public_subnets
     public_ip          = "91.152.176.231/32"
     count_master_nodes = 3
-    count_agent_nodes = 3
+    count_agent_nodes  = 2
     ec2_ami            = "ami-0905a3c97561e0b69"
     instance_type      = "t3.xlarge"
 }
