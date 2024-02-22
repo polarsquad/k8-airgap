@@ -43,3 +43,4 @@ sha256sum-amd64.txt
 install.sh
 **/agent_nodes/*
 **/master_nodes/*
+**/temp/*

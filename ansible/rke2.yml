@@ -2,7 +2,26 @@
 - name: Download rke2
   hosts: 127.0.0.1
   connection: local
+  vars:
+    helmCharts:
+      - gitea-charts/gitea
   tasks:
+    - name: Crete Local Temp Dir
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/artifacts/temp/{{ item }}"
+        state: directory
+      loop: 
+        - images
+        - helmcharts
+        - helmcharts/temp
+      tags: helm-download  
+    - name: Download IMAGES from Bootstrap Helmcharts
+      ansible.builtin.shell: helm template {{ item }} | yq -rN '..|.image? | select(.)' | sort | uniq | xargs -I {} bash -c 'docker save {} | gzip > {{ playbook_dir }}/artifacts/temp/images/$(echo {} | sed "s/[\.\/]/-/g").tar.gz'
+      loop: "{{ helmCharts }}"
+    - name: Download helmcharts for Bootstrap
+      ansible.builtin.shell: helm pull {{item}} -d {{ playbook_dir }}/artifacts/temp/helmcharts/temp && ls {{ playbook_dir }}/artifacts/temp/helmcharts/temp/*.tgz | xargs -I {} bash -c 'base64 -i {} > {{ playbook_dir }}/artifacts/temp/helmcharts/$(echo {{item}} | sed "s/[\.\/]/-/g").txt' && rm -rf {{ playbook_dir }}/artifacts/temp/helmcharts/temp/*
+      loop: "{{ helmCharts }}"
+      tags: helm-download     
     - name: Download rke2-images
       get_url:
         url: "https://github.com/rancher/rke2/releases/download/v1.29.1%2Brke2r1/rke2-images.linux-amd64.tar.zst"
