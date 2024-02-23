@@ -134,7 +134,7 @@ resource "local_file" "inventory" {
 resource "local_file" "master_nodes_configs" {
   count    = var.count_master_nodes
   content  = templatefile("${path.module}/config.tftpl", { node_name = data.aws_instance.master_nodes[count.index].public_dns, rke2_token = random_password.rke2_token.result, master_dns = data.aws_instance.master_nodes[0].public_dns, exclude = count.index == 0, master_nodes_public_dns = data.aws_instance.master_nodes[*].public_dns, agent_nodes_public_dns = data.aws_instance.agent_nodes[*].public_dns })
-  filename = "${var.keypair_path}/artifacts/rke2/master_nodes/${data.aws_instance.master_nodes[count.index].public_dns}/config.yaml"
+  filename = "${var.keypair_path}/artifacts/rke2/nodes/${data.aws_instance.master_nodes[count.index].public_dns}/config.yaml"
 }
 
 resource "local_file" "agents_nodes_configs" {
@@ -143,5 +143,5 @@ resource "local_file" "agents_nodes_configs" {
   ]
   count    = var.count_agent_nodes
   content  = templatefile("${path.module}/config.tftpl", { node_name = data.aws_instance.agent_nodes[count.index].public_dns, rke2_token = random_password.rke2_token.result, master_dns = data.aws_instance.master_nodes[0].public_dns, exclude = false, master_nodes_public_dns = data.aws_instance.master_nodes[*].public_dns, agent_nodes_public_dns = data.aws_instance.agent_nodes[*].public_dns })
-  filename = "${var.keypair_path}/artifacts/rke2/agent_nodes/${data.aws_instance.agent_nodes[count.index].public_dns}/config.yaml"
+  filename = "${var.keypair_path}/artifacts/rke2/nodes/${data.aws_instance.agent_nodes[count.index].public_dns}/config.yaml"
 }

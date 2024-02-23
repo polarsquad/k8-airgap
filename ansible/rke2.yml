@@ -4,7 +4,11 @@
   connection: local
   vars:
     helmCharts:
-      - gitea-charts/gitea
+      - chart: gitea
+        repo_url: https://dl.gitea.com/charts
+      - chart: argo-cd
+        repo_url: https://argoproj.github.io/argo-helm
+    docker_images: []    
   tasks:
     - name: Crete Local Temp Dir
       ansible.builtin.file:
@@ -13,15 +17,33 @@
       loop: 
         - images
         - helmcharts
-        - helmcharts/temp
-      tags: helm-download  
-    - name: Download IMAGES from Bootstrap Helmcharts
-      ansible.builtin.shell: helm template {{ item }} | yq -rN '..|.image? | select(.)' | sort | uniq | xargs -I {} bash -c 'docker save {} | gzip > {{ playbook_dir }}/artifacts/temp/images/$(echo {} | sed "s/[\.\/]/-/g").tar.gz'
+      tags: helm-download
+    - name: Download Chart using chart_name and repo_url
+      kubernetes.core.helm_pull:
+        chart_ref: "{{ item.chart }}"
+        repo_url: "{{ item.repo_url }}"
+        destination: "{{ playbook_dir }}/artifacts/temp/helmcharts"
       loop: "{{ helmCharts }}"
-    - name: Download helmcharts for Bootstrap
-      ansible.builtin.shell: helm pull {{item}} -d {{ playbook_dir }}/artifacts/temp/helmcharts/temp && ls {{ playbook_dir }}/artifacts/temp/helmcharts/temp/*.tgz | xargs -I {} bash -c 'base64 -i {} > {{ playbook_dir }}/artifacts/temp/helmcharts/$(echo {{item}} | sed "s/[\.\/]/-/g").txt' && rm -rf {{ playbook_dir }}/artifacts/temp/helmcharts/temp/*
-      loop: "{{ helmCharts }}"
-      tags: helm-download     
+      tags: helm-download
+    - name: Get Images from HelmCharts
+      ansible.builtin.shell: helm template {{ item }} | yq -rN '..|.image? | select(.)' | sort | uniq
+      loop: "{{ lookup('ansible.builtin.fileglob', '{{ playbook_dir }}/artifacts/temp/helmcharts/*.tgz',wantlist=True) }}"
+      register: docker_images_result
+      tags: docker_images
+    - name: Merge Docker images list
+      set_fact:
+        docker_images: "{{ docker_images + item.stdout_lines }}"
+      loop: "{{ docker_images_result.results }}"
+      tags: docker_images
+    - name: Pull Docker Images
+      community.docker.docker_image:
+        name: "{{ item }}"
+        source: pull
+        archive_path: "{{ playbook_dir }}/artifacts/temp/images/{{ item | regex_replace('[\\.\/]', '-') }}.tar"
+        pull:
+          platform: amd64
+      loop: "{{ docker_images }}"
+      tags: docker_images                
     - name: Download rke2-images
       get_url:
         url: "https://github.com/rancher/rke2/releases/download/v1.29.1%2Brke2r1/rke2-images.linux-amd64.tar.zst"
@@ -39,8 +61,10 @@
         url: "https://get.rke2.io"
         dest: "{{ playbook_dir }}/artifacts/rke2/install.sh"            
 
-- name: Install RKE2 in master nodes
-  hosts: master_nodes
+- name: Copy files to nodes
+  hosts: 
+    - master_nodes
+    - agent_nodes
   become: true
   tasks:
     - name: Crete Artifact Directory
@@ -54,7 +78,12 @@
     - name: Crete Config Directory
       ansible.builtin.file:
         path: /etc/rancher/rke2/
-        state: directory           
+        state: directory
+    - name: Copy docker images to node
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: /var/lib/rancher/rke2/agent/images/
+      loop: "{{ lookup('ansible.builtin.fileglob', '{{ playbook_dir }}/artifacts/temp/images/*.tar',wantlist=True) }}"                 
     - name: Copy rke2-images.linux-amd64.tar.zst
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/artifacts/rke2/rke2-images.linux-amd64.tar.zst"
@@ -69,13 +98,17 @@
         dest: /root/rke2-artifacts/sha256sum-amd64.txt
     - name: Copy config file
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/artifacts/rke2/master_nodes/{{ inventory_hostname }}/config.yaml"
+        src: "{{ playbook_dir }}/artifacts/rke2/nodes/{{ inventory_hostname }}/config.yaml"
         dest: /etc/rancher/rke2/config.yaml    
     - name: Copy install.sh
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/artifacts/rke2/install.sh"
         dest: /root/rke2-artifacts/install.sh
         mode: 0755
+- name: Install RKE2 in master nodes
+  hosts: master_nodes
+  become: true
+  tasks:
     - name: Install rke2
       environment:
         INSTALL_RKE2_ARTIFACT_PATH: /root/rke2-artifacts
@@ -87,44 +120,11 @@
       ansible.builtin.systemd_service:
         state: restarted
         enabled: yes
-        name: rke2-server.service
+        name: rke2-server.service          
 - name: Install RKE2 in agent nodes
   hosts: agent_nodes
   become: true
   tasks:
-    - name: Crete Artifact Directory
-      ansible.builtin.file:
-        path: /root/rke2-artifacts
-        state: directory
-    - name: Crete images directory
-      ansible.builtin.file:
-        path: /var/lib/rancher/rke2/agent/images/
-        state: directory
-    - name: Crete Config Directory
-      ansible.builtin.file:
-        path: /etc/rancher/rke2/
-        state: directory          
-    - name: Copy rke2-images.linux-amd64.tar.zst
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/artifacts/rke2/rke2-images.linux-amd64.tar.zst"
-        dest: /root/rke2-artifacts/rke2-images.linux-amd64.tar.zst
-    - name: Copy rke2.linux-amd64.tar.gz
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/artifacts/rke2/rke2.linux-amd64.tar.gz"
-        dest: /root/rke2-artifacts/rke2.linux-amd64.tar.gz
-    - name: Copy sha256sum-amd64.txt
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/artifacts/rke2/sha256sum-amd64.txt"
-        dest: /root/rke2-artifacts/sha256sum-amd64.txt
-    - name: Copy config file
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/artifacts/rke2/agent_nodes/{{ inventory_hostname }}/config.yaml"
-        dest: /etc/rancher/rke2/config.yaml       
-    - name: Copy install.sh
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/artifacts/rke2/install.sh"
-        dest: /root/rke2-artifacts/install.sh
-        mode: 0755
     - name: Install rke2
       environment:
         INSTALL_RKE2_ARTIFACT_PATH: /root/rke2-artifacts
