@@ -17,7 +17,9 @@
       loop: 
         - images
         - helmcharts
-      tags: helm-download
+      tags: 
+        - helm-download
+        - docker_images
     - name: Download Chart using chart_name and repo_url
       kubernetes.core.helm_pull:
         chart_ref: "{{ item.chart }}"
@@ -43,7 +45,14 @@
         pull:
           platform: amd64
       loop: "{{ docker_images }}"
-      tags: docker_images                
+      tags: docker_images
+    - name: Compress Container images
+      community.general.archive:
+        path: "{{ playbook_dir }}/artifacts/temp/images/*"
+        dest: "{{ playbook_dir }}/artifacts/rke2/bootstrap/bootstrap-container-images.tar.gz"
+        format: gz
+        remove: true
+      tags: docker_images                  
     - name: Download rke2-images
       get_url:
         url: "https://github.com/rancher/rke2/releases/download/v1.29.1%2Brke2r1/rke2-images.linux-amd64.tar.zst"
@@ -66,11 +75,18 @@
     - master_nodes
     - agent_nodes
   become: true
+  tags:
+    - master_nodes
+    - agent_nodes
   tasks:
     - name: Crete Artifact Directory
       ansible.builtin.file:
         path: /root/rke2-artifacts
         state: directory
+    - name: Delete images directory
+      ansible.builtin.file:
+        path: /var/lib/rancher/rke2/agent/images/
+        state: absent  
     - name: Crete images directory
       ansible.builtin.file:
         path: /var/lib/rancher/rke2/agent/images/
@@ -80,10 +96,9 @@
         path: /etc/rancher/rke2/
         state: directory
     - name: Copy docker images to node
-      ansible.builtin.copy:
-        src: "{{ item }}"
-        dest: /var/lib/rancher/rke2/agent/images/
-      loop: "{{ lookup('ansible.builtin.fileglob', '{{ playbook_dir }}/artifacts/temp/images/*.tar',wantlist=True) }}"                 
+      ansible.builtin.unarchive:
+        src: "{{ playbook_dir }}/artifacts/rke2/bootstrap/bootstrap-container-images.tar.gz"
+        dest: /var/lib/rancher/rke2/agent/images/                
     - name: Copy rke2-images.linux-amd64.tar.zst
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/artifacts/rke2/rke2-images.linux-amd64.tar.zst"
@@ -108,6 +123,7 @@
 - name: Install RKE2 in master nodes
   hosts: master_nodes
   become: true
+  tags: master_nodes
   tasks:
     - name: Install rke2
       environment:
