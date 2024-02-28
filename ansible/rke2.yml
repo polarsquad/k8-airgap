@@ -2,6 +2,9 @@
 - name: Download rke2
   hosts: 127.0.0.1
   connection: local
+  tags: 
+    - local
+    - copy-files
   vars:
     helmCharts:
       - chart: gitea
@@ -10,29 +13,48 @@
       - chart: argo-cd
         repo_url: https://argoproj.github.io/argo-helm
         version: 6.4.0
-    docker_images: []    
+      - chart: longhorn
+        repo_url: https://charts.longhorn.io
+        version: 1.6.0 
+    docker_images: 
+      - longhornio/longhorn-engine:v1.6.0 
+      - longhornio/longhorn-instance-manager:v1.6.0 
+      - longhornio/longhorn-share-manager:v1.6.0
+      - longhornio/backing-image-manager:v1.6.0
+      - longhornio/support-bundle-kit:v0.0.33
+      - longhornio/livenessprobe:v2.11.0
+      - longhornio/csi-node-driver-registrar:v2.9.2
+      - longhornio/csi-snapshotter:v6.3.2
+      - longhornio/csi-resizer:v1.9.2
+      - longhornio/csi-provisioner:v3.6.2
+      - longhornio/csi-attacher:v4.4.2
   tasks:
     - name: Crete Local Temp Dir
       ansible.builtin.file:
-        path: "{{ playbook_dir }}/artifacts/temp/{{ item }}"
+        path: "{{ item }}"
         state: directory
       loop: 
-        - images
-        - helmcharts
+        - "{{ playbook_dir }}/artifacts/rke2/bootstrap/images"
+        - "{{ playbook_dir }}/artifacts/rke2/bootstrap/helm-charts"
       tags: 
         - helm-download
         - docker_images
+    - name: Download Helm
+      ansible.builtin.get_url:
+        url: https://get.helm.sh/helm-v3.14.2-linux-amd64.tar.gz
+        dest: "{{ playbook_dir }}/artifacts/rke2/bootstrap/helm-v3.14.2-linux-amd64.tar.gz"
+      tags: helm-download     
     - name: Download Chart using chart_name and repo_url
       kubernetes.core.helm_pull:
         chart_ref: "{{ item.chart }}"
         repo_url: "{{ item.repo_url }}"
         chart_version: "{{ item.version }}"
-        destination: "{{ playbook_dir }}/artifacts/temp/helmcharts"
+        destination: "{{ playbook_dir }}/artifacts/rke2/bootstrap/helm-charts"
       loop: "{{ helmCharts }}"
       tags: helm-download
     - name: Get Images from HelmCharts
-      ansible.builtin.shell: helm template {{ item }} | yq -rN '..|.image? | select(.)' | sort | uniq
-      loop: "{{ lookup('ansible.builtin.fileglob', '{{ playbook_dir }}/artifacts/temp/helmcharts/*.tgz',wantlist=True) }}"
+      ansible.builtin.shell: helm template {{ item }} | yq -rN 'select(.kind != "CustomResourceDefinition") | ..|.image? | select(.)' | sort | uniq
+      loop: "{{ lookup('ansible.builtin.fileglob', '{{ playbook_dir }}/artifacts/rke2/bootstrap/helm-charts/*.tgz',wantlist=True) }}"
       register: docker_images_result
       tags: docker_images
     - name: Merge Docker images list
@@ -44,18 +66,11 @@
       community.docker.docker_image:
         name: "{{ item }}"
         source: pull
-        archive_path: "{{ playbook_dir }}/artifacts/temp/images/{{ item | regex_replace('[\\.\/]', '-') }}.tar"
+        archive_path: "{{ playbook_dir }}/artifacts/rke2/bootstrap/images/{{ item | regex_replace('[\\.\/]', '-') }}.tar"
         pull:
           platform: amd64
       loop: "{{ docker_images }}"
-      tags: docker_images
-    - name: Compress Container images
-      community.general.archive:
-        path: "{{ playbook_dir }}/artifacts/temp/images/*"
-        dest: "{{ playbook_dir }}/artifacts/rke2/bootstrap/bootstrap-container-images.tar.gz"
-        format: gz
-        remove: true
-      tags: docker_images                  
+      tags: docker_images                
     - name: Download rke2-images
       get_url:
         url: "https://github.com/rancher/rke2/releases/download/v1.29.1%2Brke2r1/rke2-images.linux-amd64.tar.zst"
@@ -81,27 +96,50 @@
   tags:
     - master_nodes
     - agent_nodes
+    - copy-files
   tasks:
-    - name: Crete Artifact Directory
-      ansible.builtin.file:
-        path: /root/rke2-artifacts
-        state: directory
     - name: Delete images directory
       ansible.builtin.file:
         path: /var/lib/rancher/rke2/agent/images/
-        state: absent  
-    - name: Crete images directory
+        state: absent   
+    - name: Crete Directories
       ansible.builtin.file:
-        path: /var/lib/rancher/rke2/agent/images/
+        path: "{{ item }}"
         state: directory
-    - name: Crete Config Directory
-      ansible.builtin.file:
-        path: /etc/rancher/rke2/
-        state: directory
-    - name: Copy docker images to node
+      loop: 
+        - /root/rke2-artifacts
+        - /root/rke2-artifacts/helm-charts
+        - /var/lib/rancher/rke2/agent/images/
+        - /etc/rancher/rke2/
+      tags: helm-download 
+    - name: unarchive Helm On Master node
       ansible.builtin.unarchive:
-        src: "{{ playbook_dir }}/artifacts/rke2/bootstrap/bootstrap-container-images.tar.gz"
-        dest: /var/lib/rancher/rke2/agent/images/                
+        src: "{{ playbook_dir }}/artifacts/rke2/bootstrap/helm-v3.14.2-linux-amd64.tar.gz"
+        dest: /root/rke2-artifacts
+      run_once: true
+      when: inventory_hostname == groups['master_nodes'][0]
+      tags: helm-download  
+    - name: Install Helm On Master node
+      ansible.builtin.copy:
+        src: /root/rke2-artifacts/linux-amd64/helm
+        dest: /usr/local/bin/helm
+        remote_src: yes
+        mode: '0755'
+      run_once: true
+      when: inventory_hostname == groups['master_nodes'][0]
+      tags: helm-download      
+    - name: Copy Helm charts to First Master nodes
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/artifacts/rke2/bootstrap/helm-charts/"
+        dest: /root/rke2-artifacts/helm-charts/
+      run_once: true
+      when: inventory_hostname == groups['master_nodes'][0]
+      tags: helm-download    
+    - name: Copy docker images to node
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: /var/lib/rancher/rke2/agent/images/ 
+      loop: "{{ lookup('ansible.builtin.fileglob', '{{ playbook_dir }}/artifacts/rke2/bootstrap/images/*.tar',wantlist=True) }}"                 
     - name: Copy rke2-images.linux-amd64.tar.zst
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/artifacts/rke2/rke2-images.linux-amd64.tar.zst"
@@ -154,4 +192,148 @@
       ansible.builtin.systemd_service:
         state: restarted
         enabled: yes
-        name: rke2-agent.service                 
+        name: rke2-agent.service  
+- name: Boostrap RKE2 
+  hosts: master_nodes[0]
+  become: true
+  tags: bootstrap-helm-charts
+  tasks:
+  - name: Check if git.k8sairgap.local is already defined in hosts
+    lineinfile:
+      state: absent
+      path: "/etc/hosts"
+      regexp: "git\\.k8sairgap\\.local"
+    check_mode: true
+    changed_when: false
+    register: check
+  - name: Add gitea host if undefined
+    lineinfile:
+      state: present
+      path: "/etc/hosts"
+      line: "127.0.0.1 git.k8sairgap.local"
+    when: check.found == 0
+  - name: Check if argocd.k8sairgap.local is already defined in hosts
+    lineinfile:
+      state: absent
+      path: "/etc/hosts"
+      regexp: "argocd\\.k8sairgap\\.local"
+    check_mode: true
+    changed_when: false
+    register: check
+  - name: Add gitea host if undefined
+    lineinfile:
+      state: present
+      path: "/etc/hosts"
+      line: "127.0.0.1 argocd.k8sairgap.local"
+    when: check.found == 0
+  - name: Copy git repo
+    ansible.builtin.copy:
+      src: "{{ playbook_dir }}/../argocd/manifest"
+      dest: /root/rke2-artifacts/git/manifest     
+  - name: Install Longhorn
+    kubernetes.core.helm:
+      name: longhorn
+      chart_ref: /root/rke2-artifacts/helm-charts/longhorn-1.6.0.tgz
+      release_namespace: longhorn
+      create_namespace: true
+      kubeconfig: /etc/rancher/rke2/rke2.yaml 
+      wait: true
+  - name: Install Gitea
+    kubernetes.core.helm:
+      name: gitea
+      chart_ref: /root/rke2-artifacts/helm-charts/gitea-10.1.3.tgz
+      release_namespace: gitea
+      create_namespace: true
+      kubeconfig: /etc/rancher/rke2/rke2.yaml  
+      wait: true
+      values:
+        global: 
+          strategy: 
+            type: "Recreate"  
+        gitea:
+          config: 
+            repository:
+              ENABLE_PUSH_CREATE_USER: true
+        admin:
+          username: gitea_admin
+          password: r8sA8CPHD9!bt6d
+          email: "gitea@local.domain"
+        ingress: 
+          enabled: true
+          className: "nginx"
+          hosts:
+            - host: "git.k8sairgap.local"
+              paths: 
+                - path: "/"
+                  pathType: "Prefix"
+  - name: Check if the repository already exists on the remote git server
+    uri:
+      url: http://git.k8sairgap.local/api/v1/repos/gitea_admin/manifest
+      method: GET
+      status_code: 200,404
+      url_username: gitea_admin
+      url_password: r8sA8CPHD9!bt6d
+      force_basic_auth: yes
+    register: git_repo
+
+  - name: Initialize a new git repository
+    command:
+      cmd: git init
+      chdir: /root/rke2-artifacts/git/manifest
+    when: git_repo.status == 404
+
+  - name: Set remote origin
+    command:
+      cmd: git remote add origin http://gitea_admin:r8sA8CPHD9!bt6d@git.k8sairgap.local/gitea_admin/manifest.git
+      chdir: /root/rke2-artifacts/git/manifest
+    when: git_repo.status == 404
+
+  - name: Add all files to the staging area
+    command:
+      cmd: git add .
+      chdir: /root/rke2-artifacts/git/manifest
+    when: git_repo.status == 404
+
+  - name: Commit changes
+    command:
+      cmd: git commit -m "Initial commit"
+      chdir: /root/rke2-artifacts/git/manifest
+    when: git_repo.status == 404
+
+  - name: Push changes to the remote git server
+    command:
+      cmd: git push -u origin master
+      chdir: /root/rke2-artifacts/git/manifest
+    when: git_repo.status == 404                  
+  - name: Install ArgoCD
+    kubernetes.core.helm:
+      name: argocd
+      chart_ref: /root/rke2-artifacts/helm-charts/argo-cd-6.4.0.tgz
+      release_namespace: argocd
+      create_namespace: true
+      kubeconfig: /etc/rancher/rke2/rke2.yaml  
+      wait: true  
+      values:
+        configs:
+          params:
+            server.insecure: true
+          secret:
+            argocdServerAdminPassword: "$2a$10$KaHK5In64cTxevkou4L3C.yiW2yDcQD2bDBTyzqVYqneNxtPbm1P2"
+          repositories:
+            private-repo:
+              url: "http://gitea-http.gitea:3000/gitea_admin/manifest.git"
+              username: gitea_admin
+              password: r8sA8CPHD9!bt6d
+              insecure: "true"
+              forceHttpBasicAuth: "true"
+              type: git
+        global:
+          domain: argocd.k8sairgap.local
+        server:
+          ingress:
+            enabled: true
+            annotations:
+              nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+              nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+            ingressClassName: nginx
+                      

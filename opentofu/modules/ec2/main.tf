@@ -39,6 +39,27 @@ resource "aws_security_group_rule" "ssh" {
   cidr_blocks       = [var.public_ip]
   description       = "Allow SSH from the public IP"
 }
+
+resource "aws_security_group_rule" "http" {
+  security_group_id = aws_security_group.k8-airgap-sg.id
+  type              = "ingress"
+  protocol          = "tcp"
+  from_port         = 80
+  to_port           = 80
+  cidr_blocks       = [var.public_ip]
+  description       = "Allow http from the public IP"
+}
+
+resource "aws_security_group_rule" "https" {
+  security_group_id = aws_security_group.k8-airgap-sg.id
+  type              = "ingress"
+  protocol          = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_blocks       = [var.public_ip]
+  description       = "Allow https from the public IP"
+}
+
 resource "aws_security_group_rule" "egress-self" {
   security_group_id = aws_security_group.k8-airgap-sg.id
   type              = "egress"
@@ -61,7 +82,7 @@ resource "aws_instance" "master_nodes" {
   subnet_id              = var.subnet_ids[count.index]
   vpc_security_group_ids = [aws_security_group.k8-airgap-sg.id]
   root_block_device {
-    volume_size = 50
+    volume_size = 500
     tags = {
       Name = "master_nodes_${count.index}"
     }
