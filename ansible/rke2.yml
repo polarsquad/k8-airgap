@@ -36,6 +36,7 @@
       loop: 
         - "{{ playbook_dir }}/artifacts/rke2/bootstrap/images"
         - "{{ playbook_dir }}/artifacts/rke2/bootstrap/helm-charts"
+        - "{{ playbook_dir | dirname }}/argocd/manifest/helm-charts-artifacts"
       tags: 
         - helm-download
         - docker_images
@@ -52,9 +53,38 @@
         destination: "{{ playbook_dir }}/artifacts/rke2/bootstrap/helm-charts"
       loop: "{{ helmCharts }}"
       tags: helm-download
+ 
+    - name: Get Applications from YAML file
+      shell: yq e '.Applications' "{{ playbook_dir | dirname }}/argocd/manifest/argo-cd-helm-chart/values.yaml"
+      register: applications
+      tags: helm-values
+
+    - name: Get application names
+      shell: echo '{{ applications.stdout }}' | yq e 'keys | .[]' -
+      register: app_names
+      tags: helm-values
+
+    - name: Get chart details
+      shell: echo '{{ applications.stdout }}' | yq e '.{{ item }}.sources[0]' -
+      register: chart_details
+      loop: "{{ app_names.stdout_lines }}"
+      tags: helm-values
+      
+    - name: Download Chart using chart_name and repo_url
+      kubernetes.core.helm_pull:
+        chart_ref: "{{ item.stdout | from_yaml | json_query('chart') }}"
+        repo_url: "{{ item.stdout | from_yaml | json_query('repoURL') }}"
+        chart_version: "{{ item.stdout | from_yaml | json_query('targetRevision') }}"
+        destination: "{{ playbook_dir | dirname }}/argocd/manifest/helm-charts-artifacts"
+        untar_chart: yes
+      loop: "{{ chart_details.results }}" 
+      tags: helm-values   
+    
     - name: Get Images from HelmCharts
       ansible.builtin.shell: helm template {{ item }} | yq -rN 'select(.kind != "CustomResourceDefinition") | ..|.image? | select(.)' | sort | uniq
-      loop: "{{ lookup('ansible.builtin.fileglob', '{{ playbook_dir }}/artifacts/rke2/bootstrap/helm-charts/*.tgz',wantlist=True) }}"
+      with_fileglob:
+         - "{{ playbook_dir }}/artifacts/rke2/bootstrap/helm-charts/*.tgz"
+         - "{{ playbook_dir | dirname }}/argocd/manifest/helm-charts-artifacts/*.tgz"
       register: docker_images_result
       tags: docker_images
     - name: Merge Docker images list
@@ -62,6 +92,7 @@
         docker_images: "{{ docker_images + item.stdout_lines }}"
       loop: "{{ docker_images_result.results }}"
       tags: docker_images
+
     - name: Pull Docker Images
       community.docker.docker_image:
         name: "{{ item }}"
@@ -70,7 +101,28 @@
         pull:
           platform: amd64
       loop: "{{ docker_images }}"
-      tags: docker_images                
+      tags: docker_images    
+    
+    - name: Copy values.yaml as values.airgap.yaml
+      ansible.builtin.copy:
+        src: "{{ playbook_dir | dirname }}/argocd/manifest/argo-cd-helm-chart/values.yaml"
+        dest: "{{ playbook_dir | dirname }}/argocd/manifest/argo-cd-helm-chart/values.airgap.yaml"
+
+    - name: Replace chart with path
+      replace:
+        path: "{{ playbook_dir | dirname }}/argocd/manifest/argo-cd-helm-chart/values.airgap.yaml"
+        regexp: "chart: "
+        replace: "path: helm-charts-artifacts/"
+      tags: airgap-values
+
+    - name: Change repoURL value
+      ansible.builtin.shell: yq e '.Applications[].sources[].repoURL = "http://gitea-http.gitea:3000/gitea_admin/manifest.git"' -i {{ playbook_dir | dirname }}/argocd/manifest/argo-cd-helm-chart/values.airgap.yaml       
+      tags: airgap-values
+
+    - name: Change repoURL value
+      ansible.builtin.shell: yq e '.Applications[].sources[].targetRevision = "master"' -i {{ playbook_dir | dirname }}/argocd/manifest/argo-cd-helm-chart/values.airgap.yaml       
+      tags: airgap-values  
+
     - name: Download rke2-images
       get_url:
         url: "https://github.com/rancher/rke2/releases/download/v1.29.1%2Brke2r1/rke2-images.linux-amd64.tar.zst"
@@ -229,7 +281,7 @@
   - name: Copy git repo
     ansible.builtin.copy:
       src: "{{ playbook_dir }}/../argocd/manifest"
-      dest: /root/rke2-artifacts/git/manifest     
+      dest: /root/rke2-artifacts/git     
   - name: Install Longhorn
     kubernetes.core.helm:
       name: longhorn

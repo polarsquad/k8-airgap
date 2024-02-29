@@ -1,0 +1,48 @@
+Projects:
+  manifest:
+    enable: true 
+    syncWave: -1
+    description: Manifest Project
+    clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+    destinations:
+    - namespace: "*"
+      server: '*'           
+    sourceRepos:
+    - '*' 
+Applications:
+  cert-manager:
+    enable: true
+    namespace: cert-manager
+    syncWave: 1
+    sources:
+    - chart: cert-manager
+      repoURL: https://charts.jetstack.io
+      targetRevision: '1.14.3'
+      helm:
+        releaseName: cert-manager
+    syncPolicy:
+      automated: # automated sync by default retries failed attempts 5 times with following delays between attempts ( 5s, 10s, 20s, 40s, 80s ); retry controlled using `retry` field.
+        prune: true # Specifies if resources should be pruned during auto-syncing ( false by default ).
+        selfHeal: true # Specifies if partial app sync should be executed when resources are changed only in target Kubernetes cluster and no git change detected ( false by default ).
+      syncOptions:     # Sync options which modifies sync behavior
+      - CreateNamespace=true # Namespace Auto-Creation ensures that namespace specified as the application destination exists in the destination cluster.
+      - ApplyOutOfSyncOnly=true # Only sync out-of-sync resources, rather than applying every object in the application
+  kube-prometheus-stack:
+    enable: true
+    namespace: monitoring
+    syncWave: 1
+    sources:
+    - chart: kube-prometheus-stack
+      repoURL: https://prometheus-community.github.io/helm-charts
+      targetRevision: '56.16.0'
+      helm:
+        releaseName: kube-prometheus-stack
+    syncPolicy:
+      automated: # automated sync by default retries failed attempts 5 times with following delays between attempts ( 5s, 10s, 20s, 40s, 80s ); retry controlled using `retry` field.
+        prune: true # Specifies if resources should be pruned during auto-syncing ( false by default ).
+        selfHeal: true # Specifies if partial app sync should be executed when resources are changed only in target Kubernetes cluster and no git change detected ( false by default ).
+      syncOptions:     # Sync options which modifies sync behavior
+      - CreateNamespace=true # Namespace Auto-Creation ensures that namespace specified as the application destination exists in the destination cluster.
+      - ApplyOutOfSyncOnly=true # Only sync out-of-sync resources, rather than applying every object in the application        

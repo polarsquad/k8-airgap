@@ -46,3 +46,5 @@ install.sh
 **/nodes/*
 **/temp/*
 **/bootstrap/*
+**/helm-charts-artifacts/*
+values.airgap.yaml
