@@ -43,7 +43,7 @@ sha256sum-amd64.txt
 bootstrap-container-images.tar*
 .DS_Store
 install.sh
-**/nodes/*
+**/nodes/**amazon*/*
 **/temp/*
 **/bootstrap/*
 **/helm-charts-artifacts/*

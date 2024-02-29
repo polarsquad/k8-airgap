@@ -1,0 +1,9 @@
+token: Z0Kf1UzAabFfluhG
+server: https://master-01.local:9345
+node-name: master-03.local
+tls-san:
+    - master-01.local
+    - master-02.local
+    - master-03.local
+    - agent-01.local
+    - agent-02.local

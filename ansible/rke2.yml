@@ -257,10 +257,11 @@
         state: restarted
         enabled: yes
         name: rke2-agent.service  
-- name: Boostrap RKE2 
+- name: Post Boostrap RKE2 
   hosts: master_nodes[0]
   become: true
-  tags: bootstrap-helm-charts
+  tags: 
+    - post-bootstrap-helm-charts
   tasks:
   - name: Check if git.k8sairgap.local is already defined in hosts
     lineinfile:
@@ -294,7 +295,9 @@
     ansible.builtin.unarchive:
       src: "{{ playbook_dir }}/artifacts/rke2/bootstrap/manifest.tar.tgz"
       dest: /root/rke2-artifacts/git
-    tags: copy-manifest       
+    tags: 
+      - copy-manifest 
+      - airgap-values      
   - name: Install Longhorn
     kubernetes.core.helm:
       name: longhorn
@@ -342,6 +345,8 @@
       url_password: r8sA8CPHD9!bt6d
       force_basic_auth: yes
     register: git_repo
+    tags:
+     - airgap-values
 
   - name: Initialize a new git repository
     command:
@@ -359,6 +364,8 @@
     command:
       cmd: git add .
       chdir: /root/rke2-artifacts/git/manifest
+    tags:
+     - airgap-values  
 
   - name: Commit init changes
     command:
@@ -369,12 +376,16 @@
     command:
       cmd: git commit --allow-empty -m "update"
       chdir: /root/rke2-artifacts/git/manifest
-    when: git_repo.status == 200  
+    when: git_repo.status == 200
+    tags:
+     - airgap-values  
 
   - name: Push changes to the remote git server
     command:
       cmd: git push -u origin master
-      chdir: /root/rke2-artifacts/git/manifest                 
+      chdir: /root/rke2-artifacts/git/manifest
+    tags:
+     - airgap-values                   
   - name: Install ArgoCD
     kubernetes.core.helm:
       name: argocd

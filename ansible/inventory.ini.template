@@ -1,0 +1,8 @@
+[master_nodes]
+master-01.local ansible_host=10.10.1.100 ansible_ssh_private_key_file=k8-airgap-keypair ansible_user=ubuntu 
+master-02.local ansible_host=10.10.1.101 ansible_ssh_private_key_file=k8-airgap-keypair ansible_user=ubuntu
+master-03.local ansible_host=10.10.1.102 ansible_ssh_private_key_file=k8-airgap-keypair ansible_user=ubuntu
+
+[agent_nodes]
+agent-01.local ansible_host=10.10.1.103 ansible_ssh_private_key_file=k8-airgap-keypair ansible_user=ubuntu
+agent-02.local ansible_host=10.10.1.104 ansible_ssh_private_key_file=k8-airgap-keypair ansible_user=ubuntu
