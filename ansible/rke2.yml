@@ -28,7 +28,12 @@
       - longhornio/csi-resizer:v1.9.2
       - longhornio/csi-provisioner:v3.6.2
       - longhornio/csi-attacher:v4.4.2
+      - quay.io/prometheus-operator/prometheus-config-reloader:v0.71.2
   tasks:
+    - name: Delete helm chart manifest folder
+      ansible.builtin.file:
+        path: "{{ playbook_dir | dirname }}/argocd/manifest/helm-charts-artifacts"
+        state: absent
     - name: Crete Local Temp Dir
       ansible.builtin.file:
         path: "{{ item }}"
@@ -107,6 +112,7 @@
       ansible.builtin.copy:
         src: "{{ playbook_dir | dirname }}/argocd/manifest/argo-cd-helm-chart/values.yaml"
         dest: "{{ playbook_dir | dirname }}/argocd/manifest/argo-cd-helm-chart/values.airgap.yaml"
+      tags: airgap-values  
 
     - name: Replace chart with path
       replace:
@@ -121,6 +127,12 @@
 
     - name: Change repoURL value
       ansible.builtin.shell: yq e '.Applications[].sources[].targetRevision = "master"' -i {{ playbook_dir | dirname }}/argocd/manifest/argo-cd-helm-chart/values.airgap.yaml       
+      tags: airgap-values  
+
+    - name: Compress repository
+      community.general.archive:
+        path: "{{ playbook_dir | dirname }}/argocd/manifest"
+        dest: "{{ playbook_dir }}/artifacts/rke2/bootstrap/manifest.tar.tgz"
       tags: airgap-values  
 
     - name: Download rke2-images
@@ -150,10 +162,10 @@
     - agent_nodes
     - copy-files
   tasks:
-    - name: Delete images directory
-      ansible.builtin.file:
-        path: /var/lib/rancher/rke2/agent/images/
-        state: absent   
+    # - name: Delete images directory
+    #   ansible.builtin.file:
+    #     path: /var/lib/rancher/rke2/agent/images/
+    #     state: absent   
     - name: Crete Directories
       ansible.builtin.file:
         path: "{{ item }}"
@@ -277,11 +289,12 @@
       state: present
       path: "/etc/hosts"
       line: "127.0.0.1 argocd.k8sairgap.local"
-    when: check.found == 0
+    when: check.found == 0 
   - name: Copy git repo
-    ansible.builtin.copy:
-      src: "{{ playbook_dir }}/../argocd/manifest"
-      dest: /root/rke2-artifacts/git     
+    ansible.builtin.unarchive:
+      src: "{{ playbook_dir }}/artifacts/rke2/bootstrap/manifest.tar.tgz"
+      dest: /root/rke2-artifacts/git
+    tags: copy-manifest       
   - name: Install Longhorn
     kubernetes.core.helm:
       name: longhorn
@@ -319,6 +332,8 @@
                 - path: "/"
                   pathType: "Prefix"
   - name: Check if the repository already exists on the remote git server
+    retries: 3
+    delay: 5
     uri:
       url: http://git.k8sairgap.local/api/v1/repos/gitea_admin/manifest
       method: GET
@@ -344,19 +359,22 @@
     command:
       cmd: git add .
       chdir: /root/rke2-artifacts/git/manifest
-    when: git_repo.status == 404
 
-  - name: Commit changes
+  - name: Commit init changes
     command:
       cmd: git commit -m "Initial commit"
       chdir: /root/rke2-artifacts/git/manifest
     when: git_repo.status == 404
+  - name: Commit changes
+    command:
+      cmd: git commit --allow-empty -m "update"
+      chdir: /root/rke2-artifacts/git/manifest
+    when: git_repo.status == 200  
 
   - name: Push changes to the remote git server
     command:
       cmd: git push -u origin master
-      chdir: /root/rke2-artifacts/git/manifest
-    when: git_repo.status == 404                  
+      chdir: /root/rke2-artifacts/git/manifest                 
   - name: Install ArgoCD
     kubernetes.core.helm:
       name: argocd
@@ -367,6 +385,19 @@
       wait: true  
       values:
         configs:
+          resource.customizations.health.argoproj.io_Application: |
+            hs = {}
+            hs.status = "Progressing"
+            hs.message = ""
+            if obj.status ~= nil then
+              if obj.status.health ~= nil then
+                hs.status = obj.status.health.status
+                if obj.status.health.message ~= nil then
+                  hs.message = obj.status.health.message
+                end
+              end
+            end
+            return hs
           params:
             server.insecure: true
           secret:
@@ -388,4 +419,37 @@
               nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
               nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
             ingressClassName: nginx
+        extraObjects:
+        - apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: manifest
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+            annotations:
+              argocd.argoproj.io/sync-wave: "1"
+            labels:
+              app.kubernetes.io/part-of: "manifest"    
+          spec:
+            project: default 
+            sources:
+            - path: argo-cd-helm-chart
+              helm:
+                releaseName: manifest
+                valueFiles:
+                  - values.airgap.yaml
+              repoURL: http://gitea-http.gitea:3000/gitea_admin/manifest.git
+              targetRevision: 'master'  
+            destination:
+              namespace: argocd
+              server: https://kubernetes.default.svc   
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+              - CreateNamespace=true
+              - ApplyOutOfSyncOnly=true
+
                       
