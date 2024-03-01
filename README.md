@@ -1,5 +1,3 @@
-Here's the proofread version of your text:
-
 ---
 
 # k8-airgap
